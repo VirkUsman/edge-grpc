@@ -59,6 +59,11 @@ func Start(t testing.TB, opts server.Options) *Env {
 	return e
 }
 
+// Dialer is the dial option that routes a connection to this server.
+func (e *Env) Dialer() grpc.DialOption {
+	return grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return e.lis.DialContext(ctx) })
+}
+
 // Dial opens another connection to the same server.
 func (e *Env) Dial(t testing.TB, extra ...grpc.DialOption) *grpc.ClientConn {
 	t.Helper()

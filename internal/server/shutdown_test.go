@@ -128,7 +128,9 @@ func TestShutdownGivesUpOnAPublishStreamThatNeverEnds(t *testing.T) {
 
 func TestShutdownDrainsManyStreamsAtOnce(t *testing.T) {
 	e := testutil.Start(t, server.Options{})
-	var streams []interface{ Recv() (*quotesv1.Quote, error) }
+	var streams []interface {
+		Recv() (*quotesv1.Quote, error)
+	}
 	for i := 0; i < 25; i++ {
 		st, _ := e.Client.Subscribe(testutil.Ctx(t), &quotesv1.SubscribeRequest{})
 		streams = append(streams, st)
