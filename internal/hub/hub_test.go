@@ -178,31 +178,6 @@ func TestHubCloseEndsSubscribersAndRefusesPublishes(t *testing.T) {
 	}
 }
 
-func TestWatchChangesTheSetInFlight(t *testing.T) {
-	h := New(8)
-	s, _ := h.Subscribe("ACME")
-	defer s.Close()
-	h.Publish("BOLT", 1)
-	s.Watch("BOLT")
-	h.Publish("ACME", 2)
-	h.Publish("BOLT", 3)
-	sym, seq, _ := recv(t, s)
-	if sym != "BOLT" || seq != 2 {
-		t.Fatalf("got %s #%d", sym, seq)
-	}
-}
-
-func TestWatchWithNothingMeansEverything(t *testing.T) {
-	h := New(8)
-	s, _ := h.Subscribe("ACME")
-	defer s.Close()
-	s.Watch()
-	h.Publish("BOLT", 1)
-	if sym, _, _ := recv(t, s); sym != "BOLT" {
-		t.Fatalf("got %s", sym)
-	}
-}
-
 func TestConcurrentPublishersKeepSequenceGapless(t *testing.T) {
 	h := New(1000)
 	s, _ := h.Subscribe("ACME")

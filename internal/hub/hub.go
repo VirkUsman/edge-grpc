@@ -160,21 +160,6 @@ func (s *Sub) Close() {
 	}
 }
 
-// Watch replaces the set this subscriber receives. An empty set means every
-// symbol, matching Subscribe.
-func (s *Sub) Watch(symbols ...string) {
-	s.hub.mu.Lock()
-	defer s.hub.mu.Unlock()
-	if len(symbols) == 0 {
-		s.symbols = nil
-		return
-	}
-	s.symbols = make(map[string]struct{}, len(symbols))
-	for _, sym := range symbols {
-		s.symbols[sym] = struct{}{}
-	}
-}
-
 func (s *Sub) wants(symbol string) bool {
 	if s.symbols == nil {
 		return true
