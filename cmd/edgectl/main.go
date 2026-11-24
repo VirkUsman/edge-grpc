@@ -33,7 +33,7 @@ func main() {
 
 func run(out io.Writer, addr string, plaintext bool, timeout time.Duration, token string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: edgectl latest SYMBOL | follow [SYMBOL...] | publish SYMBOL=PRICE...")
+		return fmt.Errorf("usage: edgectl latest SYMBOL | follow SYMBOLS | publish PAIRS")
 	}
 	c, err := client.Dial(addr, client.Config{
 		Token: token, Plaintext: plaintext, Retry: client.DefaultRetry,
