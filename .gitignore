@@ -1,0 +1,7 @@
+/edged
+/edgectl
+/dist/
+*.test
+*.out
+.env
+.DS_Store

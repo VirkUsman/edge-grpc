@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package quotes.v1;
+
+option go_package = "github.com/usmanvirk/edge-grpc/gen/quotes/v1;quotesv1";
+
+import "google/protobuf/timestamp.proto";
+
+// A single price for one symbol. Prices are integer minor units (cents) so
+// nothing in the pipeline does float arithmetic on money.
+message Quote {
+  string symbol = 1;
+  int64 price_minor = 2;
+  // Per symbol, starts at 1, never repeats. A reader that sees a gap knows it
+  // missed something.
+  uint64 sequence = 3;
+  google.protobuf.Timestamp at = 4;
+}
+
+message LatestRequest {
+  string symbol = 1;
+}
+
+message SubscribeRequest {
+  // Empty means every symbol.
+  repeated string symbols = 1;
+}
+
+message PublishSummary {
+  uint32 accepted = 1;
+  uint32 rejected = 2;
+}
+
+message WatchRequest {
+  oneof action {
+    string add = 1;
+    string remove = 2;
+  }
+}
+
+service QuoteFeed {
+  // Unary: the most recent quote for one symbol.
+  rpc Latest(LatestRequest) returns (Quote);
+
+  // Server streaming: quotes as they are published, until the caller cancels
+  // or the server drains.
+  rpc Subscribe(SubscribeRequest) returns (stream Quote);
+
+  // Client streaming: a feed handler pushes quotes in, gets a count back.
+  rpc Publish(stream Quote) returns (PublishSummary);
+
+  // Bidirectional: the caller changes the set of symbols it watches while the
+  // quotes keep flowing.
+  rpc Watch(stream WatchRequest) returns (stream Quote);
+}
