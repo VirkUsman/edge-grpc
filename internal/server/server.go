@@ -37,12 +37,15 @@ type Server struct {
 	log    *slog.Logger
 	gs     *grpc.Server
 	health *health.Server
+
+	drain     chan struct{} // closed when shutdown starts
+	drainOnce sync.Once
 }
 
 // New builds a server. Every method except the health check requires one of
 // the authenticator's tokens.
 func New(h *hub.Hub, auth *interceptors.Authenticator, log *slog.Logger, opts Options) *Server {
-	s := &Server{hub: h, opts: opts, log: log, health: health.NewServer()}
+	s := &Server{hub: h, opts: opts, log: log, health: health.NewServer(), drain: make(chan struct{})}
 	s.gs = grpc.NewServer(interceptors.Chain(log, auth)...)
 	quotesv1.RegisterQuoteFeedServer(s.gs, s)
 	healthpb.RegisterHealthServer(s.gs, s.health)
@@ -54,10 +57,16 @@ func New(h *hub.Hub, auth *interceptors.Authenticator, log *slog.Logger, opts Op
 // Serve blocks until the listener is closed or the server stops.
 func (s *Server) Serve(lis net.Listener) error { return s.gs.Serve(lis) }
 
-// Shutdown marks the server not serving, then waits for calls in flight.
-// When ctx ends first it stops hard and returns the context's error.
+// Shutdown marks the server not serving, tells open streams to finish, then
+// waits for every call in flight. Subscribe and Watch streams flush what they
+// have queued and end with Unavailable. When ctx ends first it stops hard and
+// returns the context's error.
+//
+// GracefulStop alone is not enough: it waits for streams, and a subscription
+// has no natural end.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.health.Shutdown()
+	s.drainOnce.Do(func() { close(s.drain) })
 	done := make(chan struct{})
 	go func() {
 		s.gs.GracefulStop()
@@ -114,6 +123,8 @@ func (s *Server) Subscribe(req *quotesv1.SubscribeRequest, stream grpc.ServerStr
 			if err := stream.Send(q); err != nil {
 				return err
 			}
+		case <-s.drain:
+			return s.flush(sub, stream, nil)
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
 		}
@@ -191,6 +202,13 @@ func (s *Server) Watch(stream grpc.BidiStreamingServer[quotesv1.WatchRequest, qu
 			if err := stream.Send(q); err != nil {
 				return err
 			}
+		case <-s.drain:
+			return s.flush(sub, stream, func(q *quotesv1.Quote) bool {
+				mu.Lock()
+				defer mu.Unlock()
+				_, want := watched[q.Symbol]
+				return want
+			})
 		case err := <-recvDone:
 			if errors.Is(err, io.EOF) {
 				return nil // the caller finished sending and is done
@@ -198,6 +216,27 @@ func (s *Server) Watch(stream grpc.BidiStreamingServer[quotesv1.WatchRequest, qu
 			return err
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
+		}
+	}
+}
+
+// flush sends whatever is already queued for a subscriber, without waiting for
+// more, then ends the stream as Unavailable.
+func (s *Server) flush(sub *hub.Sub, stream grpc.ServerStream, keep func(*quotesv1.Quote) bool) error {
+	for {
+		select {
+		case q, ok := <-sub.C:
+			if !ok {
+				return status.Error(codes.Unavailable, "server draining")
+			}
+			if keep != nil && !keep(q) {
+				continue
+			}
+			if err := stream.SendMsg(q); err != nil {
+				return err
+			}
+		default:
+			return status.Error(codes.Unavailable, "server draining")
 		}
 	}
 }
